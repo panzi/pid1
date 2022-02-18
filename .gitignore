@@ -1,0 +1,7 @@
+.*
+*~
+*.zip
+/tmp
+/build
+!.keep
+!.gitignore
