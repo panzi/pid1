@@ -21,7 +21,7 @@ void cleanup() {
         int status = 0;
         pid_t pid = waitpid(-1, &status, WNOHANG);
 
-        if (pid < 1) {
+        if (pid < 1 && errno != EINTR) {
             break;
         }
 
@@ -39,7 +39,7 @@ void reaper(int sig) {
         int status = 0;
         pid_t pid = waitpid(-1, &status, WNOHANG);
 
-        if (pid < 1) {
+        if (pid < 1 && errno != EINTR) {
             break;
         }
 
@@ -100,24 +100,28 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    int status = 0;
-    pid_t result = waitpid(child_pid, &status, 0);
-    if (result < 0) {
-        fprintf(stderr, "error waiting for %s: %s", argv[1], strerror(errno));
-        return 1;
-    }
+    for (;;) {
+        int status = 0;
+        pid_t result = waitpid(child_pid, &status, 0);
+        if (result < 0) {
+            if (errno != EINTR) {
+                fprintf(stderr, "error waiting for %s: %s", argv[1], strerror(errno));
+                return 1;
+            }
+        } else {
+            if (WIFSIGNALED(status)) {
+                fprintf(stderr, "%s exited with signal %u\n", argv[1], WTERMSIG(status));
+                return 1;
+            }
 
-    if (WIFSIGNALED(status)) {
-        fprintf(stderr, "%s exited with signal %u\n", argv[1], WTERMSIG(status));
-        return 1;
-    }
+            int exit_status = WEXITSTATUS(status);
+            if (exit_status != 0) {
+                fprintf(stderr, "%s exited abnormally with status: %d\n", argv[1], exit_status);
+            } else {
+                printf("%s exited normally\n", argv[1]);
+            }
 
-    int exit_status = WEXITSTATUS(status);
-    if (exit_status != 0) {
-        fprintf(stderr, "%s exited abnormally with status: %d\n", argv[1], exit_status);
-    } else {
-        printf("%s exited normally\n", argv[1]);
+            return exit_status;
+        }
     }
-
-    return exit_status;
 }
