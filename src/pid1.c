@@ -5,83 +5,23 @@
 #include <string.h>
 #include <wait.h>
 #include <errno.h>
-#include <dirent.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <spawn.h>
 #include <signal.h>
 
-pid_t parse_piddir(const char *filename) {
-    char *endptr = NULL;
-    long pid = strtol(filename, &endptr, 10);
-    if (*endptr) {
-        return -1;
-    }
-    return pid;
-}
-
 void cleanup() {
     printf("sending SIGTERM to all processes\n");
-
-    DIR *dir = opendir("/proc");
-
-    if (dir == NULL) {
-        perror("/proc");
-        return;
+    if (kill(-1, SIGTERM) != 0) {
+        perror("sending SIGTERM to all processes");
     }
-
-    for (;;) {
-        struct dirent *entry = readdir(dir);
-        if (entry == NULL) {
-            break;
-        }
-
-        if (entry->d_type == DT_DIR) {
-            pid_t pid = parse_piddir(entry->d_name);
-
-            if (pid > 1) {
-                if (kill(pid, SIGTERM) != 0) {
-                    perror(entry->d_name);
-                }
-            }
-        }
-    }
-
-    closedir(dir);
 
     printf("waiting for all processes\n");
     for (;;) {
-        size_t proc_count = 0;
-        DIR *dir = opendir("/proc");
+        int status = 0;
+        pid_t pid = waitpid(-1, &status, WNOHANG);
 
-        if (dir == NULL) {
-            perror("/proc");
-            break;
-        }
-
-        for (;;) {
-            struct dirent *entry = readdir(dir);
-            if (entry == NULL) {
-                break;
-            }
-
-            if (entry->d_type == DT_DIR) {
-                pid_t pid = parse_piddir(entry->d_name);
-
-                if (pid > 1) {
-                    int status = 0;
-                    pid_t result = waitpid(pid, &status, 0);
-                    if (result < 0) {
-                        ++ proc_count;
-                        fprintf(stderr, "error waiting for PID %d: %s\n", pid, strerror(errno));
-                    }
-                }
-            }
-        }
-
-        closedir(dir);
-
-        if (proc_count == 0) {
+        if (pid < 1) {
             break;
         }
     }
