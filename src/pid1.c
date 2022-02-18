@@ -55,6 +55,14 @@ void reaper(int sig) {
 
 extern char **environ;
 
+pid_t child_pid = 0;
+
+void forward_signal(int sig) {
+    if (child_pid != 0 && kill(child_pid, sig) != 0) {
+        fprintf(stderr, "error forwardning signal %d to pid %d: %s\n", sig, child_pid, strerror(errno));
+    }
+}
+
 int main(int argc, char *argv[]) {
     if (getpid() != 1) {
         fprintf(stderr, "pid1 needs to be run with process ID 1\n");
@@ -71,12 +79,21 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    if (signal(SIGTERM, forward_signal) == SIG_ERR) {
+        perror("installing SIGTERM handler");
+        return 1;
+    }
+
+    if (signal(SIGINT, forward_signal) == SIG_ERR) {
+        perror("installing SIGINT handler");
+        return 1;
+    }
+
     if (atexit(cleanup) != 0) {
         perror("registering atexit handler");
         return 1;
     }
 
-    pid_t child_pid = 0;
     int errnum = posix_spawnp(&child_pid, argv[1], NULL, NULL, &argv[1], environ);
     if (errnum != 0) {
         fprintf(stderr, "error spawning %s: %s\n", argv[1], strerror(errnum));
