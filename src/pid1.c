@@ -24,10 +24,17 @@ void cleanup() {
         if (pid < 1) {
             break;
         }
+
+        if (WIFSIGNALED(status)) {
+            printf("pid %d exited with signal %u\n", pid, WTERMSIG(status));
+        } else {
+            printf("pid %d exited with status %u\n", pid, WEXITSTATUS(status));
+        }
     }
 }
 
 void reaper(int sig) {
+    size_t count = 0;
     for (;;) {
         int status = 0;
         pid_t pid = waitpid(-1, &status, WNOHANG);
@@ -35,6 +42,14 @@ void reaper(int sig) {
         if (pid < 1) {
             break;
         }
+
+        ++ count;
+    }
+
+    if (count == 1) {
+        printf("reaped 1 zombie\n");
+    } else {
+        printf("reaped %zu zombies\n", count);
     }
 }
 
