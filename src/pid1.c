@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <wait.h>
 #include <errno.h>
@@ -19,9 +20,16 @@ void cleanup() {
     printf("waiting for all processes\n");
     for (;;) {
         int status = 0;
-        pid_t pid = waitpid(-1, &status, WNOHANG);
+        pid_t pid = wait(&status);
 
-        if (pid < 1 && errno != EINTR) {
+        if (pid == -1) {
+            if (errno == EINTR) {
+                continue;
+            }
+
+            if (errno != ECHILD) {
+                perror("*** error: waiting for processes");
+            }
             break;
         }
 
@@ -35,11 +43,28 @@ void cleanup() {
 
 void reaper(int sig) {
     size_t count = 0;
+    bool intr = false;
     for (;;) {
         int status = 0;
         pid_t pid = waitpid(-1, &status, WNOHANG);
 
-        if (pid < 1 && errno != EINTR) {
+        if (pid == 0) {
+            break;
+        }
+
+        if (pid < 1) {
+            if (errno == EINTR) {
+                if (intr) {
+                    // if interrupted twice stop reaping
+                    break;
+                }
+                intr = true;
+                continue;
+            }
+
+            if (errno != ECHILD) {
+                perror("*** error: waiting for processes");
+            }
             break;
         }
 
@@ -59,7 +84,7 @@ pid_t child_pid = 0;
 
 void forward_signal(int sig) {
     if (child_pid != 0 && kill(child_pid, sig) != 0) {
-        fprintf(stderr, "error forwardning signal %d to pid %d: %s\n", sig, child_pid, strerror(errno));
+        fprintf(stderr, "*** error: forwardnng signal %d to pid %d: %s\n", sig, child_pid, strerror(errno));
     }
 }
 
@@ -75,17 +100,17 @@ int main(int argc, char *argv[]) {
     }
 
     if (signal(SIGCHLD, reaper) == SIG_ERR) {
-        perror("installing zombie reaper");
+        perror("*** error: installing zombie reaper");
         return 1;
     }
 
     if (signal(SIGTERM, forward_signal) == SIG_ERR) {
-        perror("installing SIGTERM handler");
+        perror("*** error: installing SIGTERM handler");
         return 1;
     }
 
     if (signal(SIGINT, forward_signal) == SIG_ERR) {
-        perror("installing SIGINT handler");
+        perror("*** error: installing SIGINT handler");
         return 1;
     }
 
@@ -96,7 +121,7 @@ int main(int argc, char *argv[]) {
 
     int errnum = posix_spawnp(&child_pid, argv[1], NULL, NULL, &argv[1], environ);
     if (errnum != 0) {
-        fprintf(stderr, "error spawning %s: %s\n", argv[1], strerror(errnum));
+        fprintf(stderr, "*** error: spawning %s: %s\n", argv[1], strerror(errnum));
         return 1;
     }
 
@@ -105,7 +130,7 @@ int main(int argc, char *argv[]) {
         pid_t result = waitpid(child_pid, &status, 0);
         if (result < 0) {
             if (errno != EINTR) {
-                fprintf(stderr, "error waiting for %s: %s", argv[1], strerror(errno));
+                fprintf(stderr, "*** error: waiting for %s: %s", argv[1], strerror(errno));
                 return 1;
             }
         } else {
