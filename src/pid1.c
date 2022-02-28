@@ -11,7 +11,7 @@
 #include <spawn.h>
 #include <signal.h>
 
-void cleanup() {
+void cleanup(void) {
     printf("sending SIGTERM to all processes\n");
     if (kill(-1, SIGTERM) != 0) {
         perror("sending SIGTERM to all processes");
